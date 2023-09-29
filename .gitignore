@@ -2,4 +2,5 @@
 *checkpoints
 .python-version
 git
+stats.sh
 toy
