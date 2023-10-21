@@ -4,3 +4,7 @@ set -ex
 
 # Install the bash kernel
 python -m bash_kernel.install
+
+# Clone the git and toy repos
+git clone https://github.com/git/git
+git clone https://github.com/jsh/toy
