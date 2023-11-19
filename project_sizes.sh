@@ -4,6 +4,8 @@ begin_notebook=$SECONDS
 
 # number of commits
 ncommits() { git rev-list --first-parent ${1:-HEAD} | wc -l; }
+ncommitters() { git shortlog --first-parent -sc ${1:-HEAD} | wc -l; }
+nauthors() { git shortlog --first-parent -sa ${1:-HEAD} | wc -l; }
 
 # interval between sampled commits
 mod() { # how many commits do I skip to get $1 points?
@@ -22,6 +24,7 @@ sample-revs() {
 set-globals() {
     DEFAULT_BRANCH=$(basename $(git symbolic-ref --short refs/remotes/origin/HEAD))
     FIRST_COMMIT=$(git rev-list --first-parent --reverse $DEFAULT_BRANCH | head -1)  # initialize per repo
+    NPOINTS=10
     NPOINTS=1000
     SPW=$(( 60*60*24*7 ))  # calculate and save seconds-per-week as a shell constant
 }
@@ -59,24 +62,35 @@ run-on-timestamped-samples() {
 # count the files in the named commit without checking them out
 files() { git ls-tree -r --full-tree --name-only ${1:-HEAD}; }
 nfiles() { files $1 | wc -l; }
-lines-and-characters() { git checkout -fq ${1:-HEAD}; git ls-files | grep -v ' ' | xargs -L 1 wc | awk '{lines+=$1; chars+=$3}END{print lines "," chars}'; }
-compressed-size() { git checkout -fq ${1:-HEAD}; tar --exclude-vcs -Jcf - . | wc -c; }
+lines-and-characters() { git ls-files | grep -v ' ' | xargs -L 1 wc | awk 'BEGIN{ORS=","} {lines+=$1; chars+=$3} END{print lines "," chars}'; } 2>/dev/null
+compressed-size() { tar --exclude-vcs -Jcf - . | wc -c; }
+volumes() {
+    git checkout -fq ${1:-HEAD}
+    lines-and-characters
+    compressed-size
+}
 
-#DIR=linux
-#REPO=https://github.com/torvalds/linux.git
-DIR=git
-REPO=https://github.com/git/git.git
-OUTPUT=$PWD/sizes/$DIR
-mkdir -p $OUTPUT
+set-project() {
+    #DIR=git
+    #REPO=https://github.com/git/git.git
+    DIR=linux
+    REPO=https://github.com/torvalds/linux.git
+    OUTPUT=$PWD/sizes/$DIR
+    mkdir -p $OUTPUT
+    [ -d $DIR ] || git clone -q $REPO # clone source-code repo if it's not already there
+    cd $DIR >/dev/null # and dive in
+}
 
-[ -d $DIR ] || git clone -q $REPO # clone Git's source-code repo if it's not already there
-cd $DIR >/dev/null # and dive in
-
+set-project
 set-globals
+time run-on-timestamped-samples $NPOINTS echo > $OUTPUT/sha1s.csv
 time run-on-timestamped-samples $NPOINTS ncommits > $OUTPUT/ncommits.csv
+time run-on-timestamped-samples $NPOINTS nauthors > $OUTPUT/nauthors.csv
+time run-on-timestamped-samples $NPOINTS ncommitters > $OUTPUT/ncommitters.csv
 time run-on-timestamped-samples $NPOINTS nfiles > $OUTPUT/nfiles.csv
-time run-on-timestamped-samples $NPOINTS lines-and-characters 2>/dev/null > $OUTPUT/lines-and-characters.csv
-time run-on-timestamped-samples $NPOINTS compressed-size > $OUTPUT/compressed-size.csv
+time run-on-timestamped-samples $NPOINTS volumes > $OUTPUT/volumes.csv
+
+git checkout -qf $DEFAULT_BRANCH # clean up after yourself
 
 (( elapsed_seconds = SECONDS - begin_notebook ))
 (( minutes = elapsed_seconds / 60 ))
