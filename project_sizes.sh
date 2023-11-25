@@ -133,8 +133,8 @@ compressed-size() { tar --exclude-vcs -cf - . | zstd -T0 --fast | wc -c; }
 ## find work-tree volumes
 volumes() {
     git checkout -fq ${1:-HEAD}
-    lines-and-characters &
-    compressed-size &
+    lines-and-characters
+    compressed-size
     wait
 }
 
