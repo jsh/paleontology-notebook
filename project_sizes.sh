@@ -70,6 +70,7 @@ set-project() {
     mkdir -p $SIZES $TIMES
     [ -d $project ] || git clone -q $REPO $project # clone source-code repo if it's not already there
     cd $project >/dev/null # and dive in
+    echo calculating sizes of project $project in $PWD
 }
 
 
