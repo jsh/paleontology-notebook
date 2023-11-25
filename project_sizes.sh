@@ -1,4 +1,5 @@
-#!/bin/bash -u
+#!/bin/bash -eu
+#
 # 
 # to test out individual functions without running the whole thing.
 # just source this script, then invoke functions.
@@ -50,12 +51,12 @@ set-globals() {
 
 ## project-specific globals, directories, and setup
 set-project() {
-    local project=$1
+    local project=${1:-git} # analyze the git source by default
     SIZES=$PWD/sizes/$project
     TIMES=$PWD/times/$project
 
     # GitHub repo for project-specific sources
-    case $1 in
+    case $project in
         git)
             OWNER=git
         ;;
@@ -132,14 +133,15 @@ compressed-size() { tar --exclude-vcs -cf - . | zstd -T0 --fast | wc -c; }
 ## find work-tree volumes
 volumes() {
     git checkout -fq ${1:-HEAD}
-    lines-and-characters
-    compressed-size
+    lines-and-characters &
+    compressed-size &
+    wait
 }
 
 
 # Put them all together, they spell "MOTHER."
 main() {
-    set-project git
+    set-project ${1:-}
     set-globals   # depends on project
     for data in sha1s ncommits nauthors ncommitters nfiles volumes; do
         timeit $data
@@ -150,5 +152,5 @@ main() {
 
 # Run as a script if the file is invoked, not sourced.
 if [ "$BASH_SOURCE" == "$0" ]; then
-    main
+    main ${1:-}
 fi
