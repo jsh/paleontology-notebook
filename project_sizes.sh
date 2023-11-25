@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/bin/bash -u
 # 
 # to test out individual functions without running the whole thing.
-# just source the script, then invoke functions.
+# just source this script, then invoke functions.
 
 
 # Housekeeping
@@ -108,7 +108,7 @@ timeit() {
     local data=$1
     {
         echo == $data
-        time run-on-timestamped-samples $NPOINTS $data > $OUTPUT/$data.csv
+        time run-on-timestamped-samples $NPOINTS $data > $SIZES/$data.csv
         echo
     } &> $TIMES/$data.csv
 }
@@ -126,7 +126,7 @@ files() { git ls-tree -r --full-tree --name-only ${1:-HEAD}; }
 nfiles() { files $1 | wc -l; }
 
 ## functions that survey the worktree of a checkout
-lines-and-characters() { git ls-files | grep -v ' ' | xargs wc -P 32 | awk 'BEGIN{ORS=","} /total$/{lines+=$1; chars+=$3} END{print lines "," chars}'; } 2>/dev/null
+lines-and-characters() { git ls-files | grep -v ' ' | xargs -P 32 wc | awk 'BEGIN{ORS=","} /total$/{lines+=$1; chars+=$3} END{print lines "," chars}'; } 2>/dev/null
 compressed-size() { tar --exclude-vcs -cf - . | zstd -T0 --fast | wc -c; }
 
 ## find work-tree volumes
@@ -149,6 +149,6 @@ main() {
 
 
 # Run as a script if the file is invoked, not sourced.
-if [ $BASH_SOURCE == $0 ]; then
+if [ "$BASH_SOURCE" == "$0" ]; then
     main
 fi
