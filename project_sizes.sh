@@ -19,7 +19,6 @@ report-elapsed-time() {
 cleanup() {
     git checkout -qf $DEFAULT_BRANCH # clean up after yourself
 }
-trap cleanup EXIT
 
 
 # Basic calculations
@@ -42,35 +41,8 @@ sample-revs() {
 # Constants
 ## constants used elsewhere, can be project-dependent
 set-globals() {
-    NPOINTS=10
     NPOINTS=1000
     SPW=$(( 60*60*24*7 ))  # calculate and save seconds-per-week as a shell constant
-    DEFAULT_BRANCH=$(basename $(git symbolic-ref --short refs/remotes/origin/HEAD))
-    FIRST_COMMIT=$(git rev-list --first-parent --reverse $DEFAULT_BRANCH | head -1)  # initialize per repo
-}
-
-## project-specific globals, directories, and setup
-set-project() {
-    local project=${1:-git} # analyze the git source by default
-    SIZES=$PWD/sizes/$project
-    TIMES=$PWD/times/$project
-
-    # GitHub repo for project-specific sources
-    case $project in
-        git)
-            OWNER=git
-        ;;
-        linux)
-            OWNER=torvalds
-            ;;
-        *) die "Unknown project $project" ;;
-    esac
-    REPO=https://github.com/$OWNER/$project.git
-
-    mkdir -p $SIZES $TIMES
-    [ -d $project ] || git clone -q $REPO $project # clone source-code repo if it's not already there
-    cd $project >/dev/null # and dive in
-    echo calculating sizes of project $project in $PWD
 }
 
 
@@ -116,7 +88,7 @@ timeit() {
 }
 
 
-# Core data-collection functions
+# Core data summarizers
 ## simple data collecters
 ncommits() { git rev-list --first-parent ${1:-HEAD} | wc -l; }
 ncommitters() { git shortlog --first-parent -sc ${1:-HEAD} | wc -l; }
@@ -136,22 +108,53 @@ volumes() {
     git checkout -fq ${1:-HEAD}
     lines-and-characters
     compressed-size
-    wait
+}
+
+## report data for current repo
+collect-data() {
+    for data in sha1s ncommits nauthors ncommitters nfiles volumes; do
+        timeit $data
+    done
+}
+
+# Argument parsing
+## all repos to traverse
+repo-list() {
+    echo "$@"
+    cat .repos
+}
+
+## extract project name from URL
+project-name() {
+    basename $1 .git
 }
 
 
 # Put them all together, they spell "MOTHER."
 main() {
-    set-project ${1:-}
-    set-globals   # depends on project
-    for data in sha1s ncommits nauthors ncommitters nfiles volumes; do
-        timeit $data
+    cmdline="$@"
+    set-globals
+    for repo in $(repo-list $cmdline); do
+        project=$(project-name $repo)
+        SIZES=$PWD/sizes/$project
+        TIMES=$PWD/times/$project
+        mkdir -p $SIZES $TIMES
+        [ -d $project ] || git clone -q $repo  # if it's not already local, clone from URL
+        (   # in a subshell
+            cd $project > /dev/null
+            echo == calculating sizes of project $project in $PWD ==
+            DEFAULT_BRANCH=$(basename $(git symbolic-ref --short refs/remotes/origin/HEAD))  # master, main, ... whatever
+            FIRST_COMMIT=$(git rev-list --first-parent --reverse $DEFAULT_BRANCH | head -1)  # initial commit in current repo
+            collect-data
+        )
     done
-    report-elapsed-time
 }
 
 
 # Run as a script if the file is invoked, not sourced.
 if [ "$BASH_SOURCE" == "$0" ]; then
-    main ${1:-}
+    DEFAULT_BRANCH=$(git branch --show-current)
+    trap cleanup EXIT
+    main "$@"
+    report-elapsed-time
 fi
