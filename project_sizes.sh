@@ -7,7 +7,6 @@
 
 # Housekeeping
 ## track how long the whole thing takes
-begin_script=$SECONDS
 report-elapsed-time() {
     (( elapsed_seconds = SECONDS - begin_script ))
     (( minutes = elapsed_seconds / 60 ))
@@ -17,7 +16,7 @@ report-elapsed-time() {
 
 ## cleanliness is next to godliness
 cleanup() {
-    seq 2 $NREPOS | parallel "[ -d $project.{} ] || git clone -q $project.1 $project.{}"
+    seq 2 $NREPOS | parallel "[ -d $BASE/$project.{} ] || git clone -q $BASE/$project.1 $BASE/$project.{}"
 
 }
 
@@ -40,8 +39,9 @@ sample-revs() {
 
 
 # Constants
-## constants used elsewhere, can be project-dependent
+## true globals, set at startup
 set-globals() {
+    BASE=$PWD
     NPOINTS=1000
 	NREPOS=10
     SPW=$(( 60*60*24*7 ))  # calculate and save seconds-per-week as a shell constant
@@ -66,7 +66,7 @@ timestamp-in-weeks() {
 # Data collection
 ## Placeholder for Scott's comment.
 iterate-commits() {
-    cd $DIR.$3
+    cd $BASE/$project.$3
     local sampled_commits=$(sample-revs $1 | wc -l)
     local repo_window=$(($sampled_commits/($NREPOS-1)))
     local window_start=$(echo 1+'(('$3-1'))*'$repo_window | bc)
@@ -86,7 +86,7 @@ run-on-timestamped-samples() {
         shift # discard first argument
     fi
     local func=${1:-true}  # do nothing, i.e., only report the commit
-	seq $NREPOS | parallel cd $DIR.{} ';' git checkout -qf $DEFAULT_BRANCH
+	seq $NREPOS | parallel cd $BASE/$project.{} ';' git checkout -qf $DEFAULT_BRANCH
     # local sampled_commits=$(sample-revs $npoints | wc -l)
     # local repo_window=$(($sampled_commits/($NREPOS-1)))
     # local window_starts=$(for repo in $(seq $NREPOS); do echo 1+'(('$repo-1'))*'$repo_window | bc; done)
@@ -155,10 +155,10 @@ main() {
         SIZES=$PWD/sizes/$project
         TIMES=$PWD/times/$project
         mkdir -p $SIZES $TIMES
-        [ -d $project.1 ] || git clone -q $repo $project.1 # if it's not already local, clone from URL
-		seq 2 $NREPOS | parallel "[ -d $dir.{} ] || git clone -q $dir.1 $dir.{}"
+        [ -d $BASE/$project.1 ] || git clone -q $repo $project.1 # if it's not already local, clone from URL
+		seq 2 $NREPOS | parallel "[ -d $BASE/$project.{} ] || git clone -q $BASE/$project.1 $BASE/$project.{}"
         (   # in a subshell
-            cd $project > /dev/null
+            cd $BASE/$project > /dev/null
             echo == calculating sizes of project $project in $PWD ==
             DEFAULT_BRANCH=$(basename $(git symbolic-ref --short refs/remotes/origin/HEAD))  # master, main, ... whatever
             FIRST_COMMIT=$(git rev-list --first-parent --reverse $DEFAULT_BRANCH | head -1)  # initial commit in current repo
@@ -170,6 +170,7 @@ main() {
 
 # Run as a script if the file is invoked, not sourced.
 if [ "$BASH_SOURCE" == "$0" ]; then
+    begin_script=$SECONDS
     DEFAULT_BRANCH=$(git branch --show-current)
     trap cleanup EXIT
     main "$@"
