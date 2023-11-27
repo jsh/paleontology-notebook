@@ -158,7 +158,7 @@ main() {
         [ -d $BASE/$project.1 ] || git clone -q $repo $project.1 # if it's not already local, clone from URL
 		seq 2 $NREPOS | parallel "[ -d $BASE/$project.{} ] || git clone -q $BASE/$project.1 $BASE/$project.{}"
         (   # in a subshell
-            cd $BASE/$project > /dev/null
+            cd $BASE/$project.1 > /dev/null
             echo == calculating sizes of project $project in $PWD ==
             DEFAULT_BRANCH=$(basename $(git symbolic-ref --short refs/remotes/origin/HEAD))  # master, main, ... whatever
             FIRST_COMMIT=$(git rev-list --first-parent --reverse $DEFAULT_BRANCH | head -1)  # initial commit in current repo
