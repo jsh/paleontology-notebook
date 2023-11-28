@@ -134,9 +134,9 @@ project-name() {
 
 # Put them all together, they spell "MOTHER."
 main() {
-    local cmdline="$@"
+    local cmdline_args="$@"
     set-globals
-    for repo in $(repo-list $cmdline); do
+    for repo in $(repo-list $cmdline_args); do
         local project=$(project-name $repo)
         SIZES=$PWD/sizes/$project
         TIMES=$PWD/times/$project
