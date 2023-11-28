@@ -7,7 +7,6 @@
 
 # Housekeeping
 ## track how long the whole thing takes
-begin_script=$SECONDS
 report-elapsed-time() {
     (( elapsed_seconds = SECONDS - begin_script ))
     (( minutes = elapsed_seconds / 60 ))
@@ -153,8 +152,9 @@ main() {
 
 # Run as a script if the file is invoked, not sourced.
 if [ "$BASH_SOURCE" == "$0" ]; then
-    DEFAULT_BRANCH=$(git branch --show-current)
-    trap cleanup EXIT
+    begin_script=$SECONDS
+    # INITIAL_BRANCH=$(git branch --show-current)
+    # trap cleanup EXIT
     main "$@"
     report-elapsed-time
 fi
