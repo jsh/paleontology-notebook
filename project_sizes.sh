@@ -114,6 +114,7 @@ collect-data() {
     for data in sha1s ncommits nauthors ncommitters nfiles volumes; do
         timeit $data
     done
+    cleanup
 }
 
 # Argument parsing
