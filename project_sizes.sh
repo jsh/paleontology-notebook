@@ -8,6 +8,7 @@
 # Housekeeping
 ## track how long the whole thing takes
 report-elapsed-time() {
+    local elapsed_seconds minutes seconds
     (( elapsed_seconds = SECONDS - begin_script ))
     (( minutes = elapsed_seconds / 60 ))
     seconds=$((elapsed_seconds - minutes*60))
@@ -24,12 +25,13 @@ cleanup() {
 ## interval between sampled commits
 mod() { # how many commits do I skip to get $1 points?
     local npoints=${1:-1}  # default to every commit
-    local ncmts=$(ncommits)
-    echo $(( ncmts/npoints ))
+    echo $(( $(ncommits)/npoints ))
 }
 
 ## simple math
-only-every() { awk "(NR-1)%$1 == 0"; }
+only-every() {
+    awk "(NR-1)%$1 == 0";
+}
 ## SHA1s of the sample commits
 sample-revs() {
     git rev-list --first-parent --abbrev-commit --reverse $DEFAULT_BRANCH |  # listed from first to last
@@ -66,7 +68,7 @@ timestamp-in-weeks() {
 run-on-timestamped-samples() {
     local npoints=1 # by default, do every commit
     if [ $# -eq 2 ]; then
-        local npoints=$1
+        npoints=$1
         shift # discard first argument
     fi
     local func=${1:-true}  # do nothing, i.e., only report the commit
@@ -132,10 +134,10 @@ project-name() {
 
 # Put them all together, they spell "MOTHER."
 main() {
-    cmdline="$@"
+    local cmdline="$@"
     set-globals
     for repo in $(repo-list $cmdline); do
-        project=$(project-name $repo)
+        local project=$(project-name $repo)
         SIZES=$PWD/sizes/$project
         TIMES=$PWD/times/$project
         mkdir -p $SIZES $TIMES
