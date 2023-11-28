@@ -8,6 +8,7 @@
 # Housekeeping
 ## track how long the whole thing takes
 report-elapsed-time() {
+    local elapsed_seconds minutes seconds
     (( elapsed_seconds = SECONDS - begin_script ))
     (( minutes = elapsed_seconds / 60 ))
     seconds=$((elapsed_seconds - minutes*60))
@@ -143,9 +144,9 @@ project-name() {
 
 # Put them all together, they spell "MOTHER."
 main() {
-    cmdline="$@"
+    local cmdline_args="$@"
     set-globals
-    for repo in $(repo-list $cmdline); do
+    for repo in $(repo-list $cmdline_args); do
         project=$(project-name $repo)
         SIZES=$PWD/sizes/$project
         TIMES=$PWD/times/$project
