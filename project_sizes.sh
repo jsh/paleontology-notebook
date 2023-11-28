@@ -170,5 +170,5 @@ if [ "$BASH_SOURCE" == "$0" ]; then
     #INITIAL_BRANCH=$(git branch --show-current)
     #trap cleanup EXIT
     main "$@"
-    report-elapsed-time
+    report-elapsed-time | tee $TIMES/elapsed.total
 fi
