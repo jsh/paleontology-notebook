@@ -16,8 +16,7 @@ report-elapsed-time() {
 
 ## cleanliness is next to godliness
 cleanup() {
-    seq 2 $NREPOS | parallel "[ -d $BASE/$project.{} ] || git clone -q $BASE/$project.1 $BASE/$project.{}"
-
+    git checkout -qf $DEFAULT_BRANCH
 }
 
 
@@ -43,7 +42,7 @@ sample-revs() {
 set-globals() {
     BASE=$PWD
     NPOINTS=1000
-	NREPOS=10
+    NREPOS=10
     SPW=$(( 60*60*24*7 ))  # calculate and save seconds-per-week as a shell constant
 }
 
@@ -75,6 +74,7 @@ iterate-commits() {
     for commit in $commit_list; do
         echo $(timestamp-in-weeks $commit) ,$($2 $commit)
     done
+    cleanup
 }
 ## loop through sample revisions, calling a function for each,
 ## separate timestamp and week with a comma
@@ -86,11 +86,6 @@ run-on-timestamped-samples() {
         shift # discard first argument
     fi
     local func=${1:-true}  # do nothing, i.e., only report the commit
-	seq $NREPOS | parallel cd $BASE/$project.{} ';' git checkout -qf $DEFAULT_BRANCH
-    # local sampled_commits=$(sample-revs $npoints | wc -l)
-    # local repo_window=$(($sampled_commits/($NREPOS-1)))
-    # local window_starts=$(for repo in $(seq $NREPOS); do echo 1+'(('$repo-1'))*'$repo_window | bc; done)
-    # local window_ends=$(for repo in $(seq $NREPOS); do echo $repo_window+'(('$repo-1'))'*$repo_window | bc; done)
     seq $NREPOS | parallel iterate-commits $npoints $func {}
 }
 
@@ -123,7 +118,7 @@ compressed-size() { tar --exclude-vcs -cf - . | zstd -T0 --fast | wc -c; }
 ## find work-tree volumes
 volumes() {
     git checkout -fq ${1:-HEAD}
-	parallel ::: lines-and-characters compressed-size
+    parallel ::: lines-and-characters compressed-size
 }
 
 ## report data for current repo
@@ -156,7 +151,7 @@ main() {
         TIMES=$PWD/times/$project
         mkdir -p $SIZES $TIMES
         [ -d $BASE/$project.1 ] || git clone -q $repo $project.1 # if it's not already local, clone from URL
-		seq 2 $NREPOS | parallel "[ -d $BASE/$project.{} ] || git clone -q $BASE/$project.1 $BASE/$project.{}"
+        seq 2 $NREPOS | parallel "[ -d $BASE/$project.{} ] || git clone -q $BASE/$project.1 $BASE/$project.{}"
         (   # in a subshell
             cd $BASE/$project.1 > /dev/null
             echo == calculating sizes of project $project in $PWD ==
@@ -171,8 +166,8 @@ main() {
 # Run as a script if the file is invoked, not sourced.
 if [ "$BASH_SOURCE" == "$0" ]; then
     begin_script=$SECONDS
-    DEFAULT_BRANCH=$(git branch --show-current)
-    trap cleanup EXIT
+    #INITIAL_BRANCH=$(git branch --show-current)
+    #trap cleanup EXIT
     main "$@"
     report-elapsed-time
 fi
