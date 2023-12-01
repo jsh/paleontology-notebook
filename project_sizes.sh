@@ -16,8 +16,10 @@ report-elapsed-time() {
 }
 
 ## cleanliness is next to godliness
-cleanup() {
-    git checkout -qf $DEFAULT_BRANCH # clean up after yourself
+get-default-branch() {
+    CURRENT_BRANCH=$(git branch --show-current)
+    [ $CURRENT_BRANCH == $DEFAULT_BRANCH ] ||
+        git checkout -qf $DEFAULT_BRANCH
 }
 
 
@@ -72,7 +74,7 @@ run-on-timestamped-samples() {
         shift # discard first argument
     fi
     local func=${1:-true}  # do nothing, i.e., only report the commit
-    git checkout -qf $DEFAULT_BRANCH
+    # git checkout -qf $DEFAULT_BRANCH
     for commit in $(sample-revs $npoints); do
         echo $(timestamp-in-weeks $commit) ,$($func $commit)
     done
@@ -106,17 +108,18 @@ compressed-size() { tar --exclude-vcs -cf - . | zstd -T0 --fast | wc -c; }
 
 ## find work-tree volumes
 volumes() {
-    git checkout -fq ${1:-HEAD}
+    git checkout -fq ${1:-HEAD}  # nearly all the time's spent here
     lines-and-characters
     compressed-size
 }
 
 ## report data for current repo
-collect-data() {
-    for data in sha1s ncommits nauthors ncommitters nfiles volumes; do
-        timeit $data
+collect-nocheckout-data() {
+    # for data in sha1s ncommits nauthors ncommitters nfiles volumes; do
+    for data in sha1s ncommits nauthors ncommitters nfiles; do
+        timeit $data &
     done
-    cleanup
+    wait
 }
 
 # Argument parsing
@@ -147,9 +150,11 @@ main() {
             echo == calculating sizes of project $project in $PWD ==
             DEFAULT_BRANCH=$(basename $(git symbolic-ref --short refs/remotes/origin/HEAD))  # master, main, ... whatever
             FIRST_COMMIT=$(git rev-list --first-parent --reverse $DEFAULT_BRANCH | head -1)  # initial commit in current repo
-            collect-data
-        )
+            get-default-branch
+            collect-nocheckout-data
+        ) &
     done
+    wait
 }
 
 
@@ -157,7 +162,7 @@ main() {
 if [ "$BASH_SOURCE" == "$0" ]; then
     begin_script=$SECONDS
     # INITIAL_BRANCH=$(git branch --show-current)
-    # trap cleanup EXIT
+    # trap get-default-branch EXIT
     main "$@"
     report-elapsed-time
 fi
