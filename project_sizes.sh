@@ -36,7 +36,7 @@ only-every() {
 }
 ## SHA1s of the sample commits
 sample-revs() {
-    git rev-list --first-parent --abbrev-commit --reverse $DEFAULT_BRANCH |  # listed from first to last
+    git rev-list $REVS --abbrev-commit --reverse $DEFAULT_BRANCH |  # listed from first to last
         only-every $(mod $1)
 }
 
@@ -44,6 +44,8 @@ sample-revs() {
 # Constants
 ## constants used elsewhere, can be project-dependent
 set-globals() {
+    # REVS=""
+    REVS="--first-parent"
     NPOINTS=1000
     SPW=$(( 60*60*24*7 ))  # calculate and save seconds-per-week as a shell constant
 }
@@ -93,9 +95,9 @@ timeit() {
 
 # Core data summarizers
 ## simple data collecters
-ncommits() { git rev-list --first-parent ${1:-HEAD} | wc -l; }
-ncommitters() { git shortlog --first-parent -sc ${1:-HEAD} | wc -l; }
-nauthors() { git shortlog --first-parent -sa ${1:-HEAD} | wc -l; }
+ncommits() { git rev-list $REVS ${1:-HEAD} | wc -l; }
+ncommitters() { git shortlog $REVS -sc ${1:-HEAD} | wc -l; }
+nauthors() { git shortlog $REVS -sa ${1:-HEAD} | wc -l; }
 sha1s() { echo ${1:-HEAD}; }
 
 ## count the files in the named commit without checking them out
@@ -149,7 +151,7 @@ main() {
             cd $project > /dev/null
             echo == calculating sizes of project $project in $PWD ==
             DEFAULT_BRANCH=$(basename $(git symbolic-ref --short refs/remotes/origin/HEAD))  # master, main, ... whatever
-            FIRST_COMMIT=$(git rev-list --first-parent --reverse $DEFAULT_BRANCH | head -1)  # initial commit in current repo
+            FIRST_COMMIT=$(git rev-list $REVS --reverse $DEFAULT_BRANCH | head -1)  # initial commit in current repo
             get-default-branch
             collect-nocheckout-data
         ) &
