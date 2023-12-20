@@ -1,10 +1,12 @@
 #!/bin/bash -eu
 
+## a useful tool
 die() {
     echo "$@" >&2
     exit 1
 }
 
+## script variables set once, used in several places
 set-globals() {
     SPW=$(( 60*60*24*7 ))  # calculate and save seconds-per-week as a shell constant
     # plus some defaults
@@ -13,19 +15,21 @@ set-globals() {
     RESULTS=/tmp
     SIZES=$RESULTS/sizes
     TIMES=$RESULTS/times
+    FUNCS="ncommits nweeks nauthors ncommitters nfiles"
 }
 
+## per-project variables
 set-locals() {
-    # per-project variables
     project=$1
     # output locations
     PROJ_SIZES=$SIZES/$project
     PROJ_TIMES=$TIMES/$project
     mkdir -p $PROJ_TIMES $PROJ_SIZES
+    # misc. per-project variables
     DEFAULT_BRANCH=$(basename $(git symbolic-ref --short refs/remotes/origin/HEAD))  # master, main, ... whatever
     SKIP=$(skip-size-for $NPOINTS)
     set-rev-list
-    FIRST_COMMIT=$(head -1 <<< $REVS) # initial commit in current repo
+    FIRST_COMMIT=$(head -1 <<< "$REV_LIST") # initial commit in current repo
 }
 
 # Housekeeping
@@ -139,14 +143,19 @@ project-name() {
 }
 ## report data for current repo
 collect-nocheckout-data() {
-    for func in ncommits nweeks nauthors ncommitters nfiles; do
+    for func in $FUNCS; do
         timeit $func $REV_LIST &
     done
     wait
 }
-## variables set in config file override built-in defaults
-##  File is just assignments
-##      NPOINTS=10  # do just 10 points instead of 1000
+## variables set in .config file override built-in defaults
+##  File is just assignments, e.g.,
+##
+##      # example .config file
+##      REVS="--first-parent"    # just look at the first parent
+##      NPOINTS=10               # do only 10 points
+##      FUNCS="ncommits nweeks"  # just report these data
+##
 read-config() {
     [ -f .config ] && source .config
 }
