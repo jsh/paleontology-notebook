@@ -6,23 +6,26 @@ die() {
 }
 
 set-globals() {
+    SPW=$(( 60*60*24*7 ))  # calculate and save seconds-per-week as a shell constant
+    # plus some defaults
+    REVS=""
     NPOINTS=1000
     RESULTS=/tmp
     SIZES=$RESULTS/sizes
     TIMES=$RESULTS/times
-    REVS=""
-    SPW=$(( 60*60*24*7 ))  # calculate and save seconds-per-week as a shell constant
 }
 
 set-locals() {
+    # per-project variables
     project=$1
+    # output locations
     PROJ_SIZES=$SIZES/$project
     PROJ_TIMES=$TIMES/$project
     mkdir -p $PROJ_TIMES $PROJ_SIZES
     DEFAULT_BRANCH=$(basename $(git symbolic-ref --short refs/remotes/origin/HEAD))  # master, main, ... whatever
-    FIRST_COMMIT=$(git rev-list $REVS --reverse $DEFAULT_BRANCH | head -1)  # initial commit in current repo
     SKIP=$(skip-size-for $NPOINTS)
     set-rev-list
+    FIRST_COMMIT=$(head -1 <<< $REVS) # initial commit in current repo
 }
 
 # Housekeeping
@@ -41,21 +44,28 @@ get-default-branch() {
     [ $CURRENT_BRANCH == $DEFAULT_BRANCH ] ||
         git checkout -qf $DEFAULT_BRANCH
 }
+## all revisions
 revs() {
-    git rev-list --abbrev-commit --reverse $DEFAULT_BRANCH
+    git rev-list $REVS --abbrev-commit --reverse $DEFAULT_BRANCH
 }
+## total revisions
 nrevs() {
     revs | wc -l
 }
+## number of revisions to skip between samples
 skip-size-for() {
     echo $(($(nrevs)/$1))
 }
+## evenly spaced sample revisions
 sample-revs(){
-    revs | gsplit -n r/1/$SKIP
+    revs |                     # list of evenly spaced revisions,
+        gsplit -n r/1/$SKIP    # separated by $SKIP, starting with first commit
 }
+## cache the list in REV_LIST
 set-rev-list() {
-    : ${REV_LIST:="$(sample-revs)"}
+    : ${REV_LIST:="$(sample-revs)"}     # calculate once per project
 }
+## commits per revision
 ncommits() {
     local sample=1;
     for rev in $*; do
@@ -63,9 +73,31 @@ ncommits() {
         ((sample += $SKIP))
     done
 }
-timestamps() {
+## weeks after initial commit, each revision
+nweeks() {
     for rev in $*; do
         echo $rev,$(timestamp-in-weeks $rev)
+    done
+}
+## number of authors at each revision
+nauthors() {
+    for rev in $*; do
+        echo $rev,$(git shortlog $REVS -sa $rev | wc -l)
+    done
+}
+## number of committers at each revision
+ncommitters() {
+    for rev in $*; do
+        echo $rev,$(git shortlog $REVS -sc $rev | wc -l)
+    done
+}
+
+## all files in a revision
+files() { git ls-tree -r --full-tree --name-only ${1:-HEAD}; }
+## number of files at each revision
+nfiles() {
+    for rev in $*; do
+        echo $rev,$(files $rev | wc -l)
     done
 }
 
@@ -94,28 +126,36 @@ spw() { echo "scale=2; $1/$SPW" | bc; }
 timestamp-in-weeks() {
     spw $(timestamp $1)
 }
-# Argument parsing ## all repos to traverse
-repo-list() {
-    echo "$@"
-    cat .repos
-}
+# Argument parsing
 
+## all repos to traverse
+repo-list() {
+    echo "$@"             # repos on command line
+    sed s'/#.*$//' .repos  # file of repo names, comments allowed
+}
 ## extract project name from URL
 project-name() {
     basename $1 .git
 }
-
 ## report data for current repo
 collect-nocheckout-data() {
-    for func in ncommits timestamps; do
+    for func in ncommits nweeks nauthors ncommitters nfiles; do
         timeit $func $REV_LIST &
     done
     wait
 }
+## variables set in config file override built-in defaults
+##  File is just assignments
+##      NPOINTS=10  # do just 10 points instead of 1000
+read-config() {
+    [ -f .config ] && source .config
+}
 
+# Put them all together, they spell "MOTHER."
 main() {
     local cmdline_args="$@"
     set-globals
+    read-config
     for repo in $(repo-list $cmdline_args); do
         local project=$(project-name $repo)
         [ -d $project ] || git clone -q $repo  # if it's not already local, clone from URL
