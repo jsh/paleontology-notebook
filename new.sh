@@ -58,7 +58,7 @@ nrevs() {
 }
 ## number of revisions to skip between samples
 skip-size-for() {
-    echo $(($(nrevs)/$1))
+    echo $(( $(nrevs)/$1 ))
 }
 ## evenly spaced sample revisions
 sample-revs(){
