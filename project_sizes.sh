@@ -1,9 +1,36 @@
 #!/bin/bash -eu
-#
-# 
-# to test out individual functions without running the whole thing.
-# just source this script, then invoke functions.
 
+## a useful tool
+die() {
+    echo "$@" >&2
+    exit 1
+}
+
+## script variables set once, used in several places
+set-globals() {
+    SPW=$(( 60*60*24*7 ))  # calculate and save seconds-per-week as a shell constant
+    # plus some defaults
+    REVS=""
+    NPOINTS=1000
+    RESULTS=/tmp
+    SIZES=$RESULTS/sizes
+    TIMES=$RESULTS/times
+    FUNCS="ncommits nweeks nauthors ncommitters nfiles"
+}
+
+## per-project variables
+set-locals() {
+    project=$1
+    # output locations
+    PROJ_SIZES=$SIZES/$project
+    PROJ_TIMES=$TIMES/$project
+    mkdir -p $PROJ_TIMES $PROJ_SIZES
+    # misc. per-project variables
+    DEFAULT_BRANCH=$(basename $(git symbolic-ref --short refs/remotes/origin/HEAD))  # master, main, ... whatever
+    SKIP=$(skip-size-for $NPOINTS)
+    set-rev-list
+    FIRST_COMMIT=$(head -1 <<< "$REV_LIST") # initial commit in current repo
+}
 
 # Housekeeping
 ## track how long the whole thing takes
@@ -12,7 +39,7 @@ report-elapsed-time() {
     (( elapsed_seconds = SECONDS - begin_script ))
     (( minutes = elapsed_seconds / 60 ))
     seconds=$((elapsed_seconds - minutes*60))
-    printf "Total elapsed time %02d:%02d\n" $minutes $seconds
+    printf "Total elapsed time %02d:%02d\n" $minutes $seconds | tee $TIMES/total.times
 }
 
 ## cleanliness is next to godliness
@@ -21,35 +48,73 @@ get-default-branch() {
     [ $CURRENT_BRANCH == $DEFAULT_BRANCH ] ||
         git checkout -qf $DEFAULT_BRANCH
 }
-
-
-# Basic calculations
-## interval between sampled commits
-mod() { # how many commits do I skip to get $1 points?
-    local npoints=${1:-1}  # default to every commit
-    echo $(( $(ncommits)/npoints ))
+## all revisions
+revs() {
+    git rev-list $REVS --abbrev-commit --reverse $DEFAULT_BRANCH
+}
+## total revisions
+nrevs() {
+    revs | wc -l
+}
+## number of revisions to skip between samples
+skip-size-for() {
+    echo $(( $(nrevs)/$1 ))
+}
+## evenly spaced sample revisions
+sample-revs(){
+    revs |                     # list of evenly spaced revisions,
+        gsplit -n r/1/$SKIP    # separated by $SKIP, starting with first commit
+}
+## cache the list in REV_LIST
+set-rev-list() {
+    : ${REV_LIST:="$(sample-revs)"}     # calculate once per project
+}
+## commits per revision
+ncommits() {
+    local sample=1;
+    for rev in $*; do
+        echo $rev,$sample
+        ((sample += $SKIP))
+    done
+}
+## weeks after initial commit, each revision
+nweeks() {
+    for rev in $*; do
+        echo $rev,$(timestamp-in-weeks $rev)
+    done
+}
+## number of authors at each revision
+nauthors() {
+    for rev in $*; do
+        echo $rev,$(git shortlog $REVS -sa $rev | wc -l)
+    done
+}
+## number of committers at each revision
+ncommitters() {
+    for rev in $*; do
+        echo $rev,$(git shortlog $REVS -sc $rev | wc -l)
+    done
 }
 
-## simple math
-only-every() {
-    awk "(NR-1)%$1 == 0";
-}
-## SHA1s of the sample commits
-sample-revs() {
-    git rev-list $REVS --abbrev-commit --reverse $DEFAULT_BRANCH |  # listed from first to last
-        only-every $(mod $1)
-}
-
-
-# Constants
-## constants used elsewhere, can be project-dependent
-set-globals() {
-    # REVS=""
-    REVS="--first-parent"
-    NPOINTS=1000
-    SPW=$(( 60*60*24*7 ))  # calculate and save seconds-per-week as a shell constant
+## all files in a revision
+files() { git ls-tree -r --full-tree --name-only ${1:-HEAD}; }
+## number of files at each revision
+nfiles() {
+    for rev in $*; do
+        echo $rev,$(files $rev | wc -l)
+    done
 }
 
+## collect timing data
+timeit() {
+    local func=$1
+    shift
+    {
+        echo == $func
+        time $func $* > $PROJ_SIZES/$func.csv
+        echo
+    } &> $PROJ_TIMES/$func.times
+}
 
 # Timing commits
 ## an absolute timestamp, in seconds-from-the-epoch
@@ -65,106 +130,60 @@ spw() { echo "scale=2; $1/$SPW" | bc; }
 timestamp-in-weeks() {
     spw $(timestamp $1)
 }
-
-# Data collection
-## loop through sample revisions, calling a function for each,
-## separate timestamp and week with a comma
-run-on-timestamped-samples() {
-    local npoints=1 # by default, do every commit
-    if [ $# -eq 2 ]; then
-        npoints=$1
-        shift # discard first argument
-    fi
-    local func=${1:-true}  # do nothing, i.e., only report the commit
-    # git checkout -qf $DEFAULT_BRANCH
-    for commit in $(sample-revs $npoints); do
-        echo $(timestamp-in-weeks $commit) ,$($func $commit)
-    done
-}
-
-## collect timing data
-timeit() {
-    local data=$1
-    {
-        echo == $data
-        time run-on-timestamped-samples $NPOINTS $data > $SIZES/$data.csv
-        echo
-    } &> $TIMES/$data.csv
-}
-
-
-# Core data summarizers
-## simple data collecters
-ncommits() { git rev-list $REVS ${1:-HEAD} | wc -l; }
-ncommitters() { git shortlog $REVS -sc ${1:-HEAD} | wc -l; }
-nauthors() { git shortlog $REVS -sa ${1:-HEAD} | wc -l; }
-sha1s() { echo ${1:-HEAD}; }
-
-## count the files in the named commit without checking them out
-files() { git ls-tree -r --full-tree --name-only ${1:-HEAD}; }
-nfiles() { files $1 | wc -l; }
-
-## functions that survey the worktree of a checkout
-lines-and-characters() { git ls-files | grep -v ' ' | xargs -P 32 wc | awk 'BEGIN{ORS=","} /total$/{lines+=$1; chars+=$3} END{print lines "," chars}'; } 2>/dev/null
-compressed-size() { tar --exclude-vcs -cf - . | zstd -T0 --fast | wc -c; }
-
-## find work-tree volumes
-volumes() {
-    git checkout -fq ${1:-HEAD}  # nearly all the time's spent here
-    lines-and-characters
-    compressed-size
-}
-
-## report data for current repo
-collect-nocheckout-data() {
-    # for data in sha1s ncommits nauthors ncommitters nfiles volumes; do
-    for data in sha1s ncommits nauthors ncommitters nfiles; do
-        timeit $data &
-    done
-    wait
-}
-
 # Argument parsing
+
 ## all repos to traverse
 repo-list() {
-    echo "$@"
-    cat .repos
+    echo "$@"             # repos on command line
+    sed s'/#.*$//' .repos  # file of repo names, comments allowed
 }
-
 ## extract project name from URL
 project-name() {
     basename $1 .git
 }
-
+## report data for current repo
+collect-nocheckout-data() {
+    for func in $FUNCS; do
+        timeit $func $REV_LIST &
+    done
+    wait
+}
+## variables set in .config file override built-in defaults
+##  File is just assignments, e.g.,
+##
+##      # example .config file
+##      REVS="--first-parent"    # just look at the first parent
+##      NPOINTS=10               # do only 10 points
+##      FUNCS="ncommits nweeks"  # just report these data
+##
+read-config() {
+    [ -f .config ] && source .config
+}
 
 # Put them all together, they spell "MOTHER."
 main() {
     local cmdline_args="$@"
     set-globals
+    read-config
     for repo in $(repo-list $cmdline_args); do
         local project=$(project-name $repo)
-        SIZES=$PWD/sizes/$project
-        TIMES=$PWD/times/$project
-        mkdir -p $SIZES $TIMES
         [ -d $project ] || git clone -q $repo  # if it's not already local, clone from URL
         (   # in a subshell
             cd $project > /dev/null
             echo == calculating sizes of project $project in $PWD ==
-            DEFAULT_BRANCH=$(basename $(git symbolic-ref --short refs/remotes/origin/HEAD))  # master, main, ... whatever
-            FIRST_COMMIT=$(git rev-list $REVS --reverse $DEFAULT_BRANCH | head -1)  # initial commit in current repo
-            get-default-branch
+            set-locals $project
             collect-nocheckout-data
         ) &
     done
     wait
 }
 
-
 # Run as a script if the file is invoked, not sourced.
 if [ "$BASH_SOURCE" == "$0" ]; then
     begin_script=$SECONDS
     # INITIAL_BRANCH=$(git branch --show-current)
     # trap get-default-branch EXIT
-    main "$@"
+    # main "$@"
+    main
     report-elapsed-time
 fi
