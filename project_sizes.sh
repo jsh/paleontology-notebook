@@ -1,11 +1,20 @@
 #!/bin/bash -eu
 
-## a useful tool
+# Housekeeping: utility functions
+## print message to stderr and fail
 die() {
     echo "$@" >&2
     exit 1
 }
+## cleanliness is next to godliness
+get-default-branch() {
+    CURRENT_BRANCH=$(git branch --show-current)
+    [ $CURRENT_BRANCH == $DEFAULT_BRANCH ] ||
+        git checkout -qf $DEFAULT_BRANCH
+}
 
+
+# Setup variables
 ## script variables set once, used in several places
 set-globals() {
     SPW=$(( 60*60*24*7 ))  # calculate and save seconds-per-week as a shell constant
@@ -32,22 +41,7 @@ set-locals() {
     FIRST_COMMIT=$(head -1 <<< "$REV_LIST") # initial commit in current repo
 }
 
-# Housekeeping
-## track how long the whole thing takes
-report-elapsed-time() {
-    local elapsed_seconds minutes seconds
-    (( elapsed_seconds = SECONDS - begin_script ))
-    (( minutes = elapsed_seconds / 60 ))
-    seconds=$((elapsed_seconds - minutes*60))
-    printf "Total elapsed time %02d:%02d\n" $minutes $seconds | tee $TIMES/total.times
-}
-
-## cleanliness is next to godliness
-get-default-branch() {
-    CURRENT_BRANCH=$(git branch --show-current)
-    [ $CURRENT_BRANCH == $DEFAULT_BRANCH ] ||
-        git checkout -qf $DEFAULT_BRANCH
-}
+# Revisions to work on.
 ## all revisions
 revs() {
     git rev-list $REVS --abbrev-commit --reverse $DEFAULT_BRANCH
@@ -69,6 +63,8 @@ sample-revs(){
 set-rev-list() {
     : ${REV_LIST:="$(sample-revs)"}     # calculate once per project
 }
+
+# Data-collection
 ## commits per revision
 ncommits() {
     local sample=1;
@@ -95,7 +91,6 @@ ncommitters() {
         echo $rev,$(git shortlog $REVS -sc $rev | wc -l)
     done
 }
-
 ## all files in a revision
 files() { git ls-tree -r --full-tree --name-only ${1:-HEAD}; }
 ## number of files at each revision
@@ -104,8 +99,37 @@ nfiles() {
         echo $rev,$(files $rev | wc -l)
     done
 }
+## complete data for current repo
+collect-nocheckout-data() {
+    for func in $FUNCS; do
+        timeit $func $REV_LIST &
+    done
+    wait
+}
+## combine all csv files into a single, summary csv
+summarize() {
+    local results=$1
+    (
+        cd $results        # do this in a subshell, so you don't have to track the cds
+        cat nweeks.csv |
+            join -t, - ncommits.csv |
+            join -t, - ncommitters.csv |
+            join -t, - nauthors.csv |
+            join -t, - nfiles.csv |
+            sed 's/ //g' > all.csv
+    ) 
+}
+## summarize all repos
+summarize-all() {
+    local sizes
+    for sizes in $SIZES/*; do
+        summarize $sizes
+    done
+}
 
-## collect timing data
+
+# Timing the script
+## how long to collect one data set?
 timeit() {
     local func=$1
     shift
@@ -114,6 +138,14 @@ timeit() {
         time $func $* > $PROJ_SIZES/$func.csv
         echo
     } &> $PROJ_TIMES/$func.times
+}
+## how long to run this whole script?
+report-elapsed-time() {
+    local elapsed_seconds minutes seconds
+    (( elapsed_seconds = SECONDS - begin_script ))
+    (( minutes = elapsed_seconds / 60 ))
+    seconds=$((elapsed_seconds - minutes*60))
+    printf "Total elapsed time %02d:%02d\n" $minutes $seconds | tee $TIMES/total.times
 }
 
 # Timing commits
@@ -130,8 +162,8 @@ spw() { echo "scale=2; $1/$SPW" | bc; }
 timestamp-in-weeks() {
     spw $(timestamp $1)
 }
-# Argument parsing
 
+# Argument parsing
 ## all repos to traverse
 repo-list() {
     echo "$@"             # repos on command line
@@ -140,13 +172,6 @@ repo-list() {
 ## extract project name from URL
 project-name() {
     basename $1 .git
-}
-## report data for current repo
-collect-nocheckout-data() {
-    for func in $FUNCS; do
-        timeit $func $REV_LIST &
-    done
-    wait
 }
 ## variables set in .config file override built-in defaults
 ##  File is just assignments, e.g.,
@@ -176,6 +201,7 @@ main() {
         ) &
     done
     wait
+    summarize-all
 }
 
 # Run as a script if the file is invoked, not sourced.
