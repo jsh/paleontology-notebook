@@ -1,6 +1,9 @@
 *.ignore
 *checkpoints
+.config
 .python-version
+.repos
 git
+linux
 stats.sh
 toy
