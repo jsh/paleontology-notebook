@@ -22,8 +22,6 @@ set-globals() {
     REVS=""
     NPOINTS=1000
     RESULTS=/tmp
-    SIZES=$RESULTS/sizes
-    TIMES=$RESULTS/times
     FUNCS="ncommits nweeks nauthors ncommitters nfiles"
 }
 
@@ -31,8 +29,8 @@ set-globals() {
 set-locals() {
     project=$1
     # output locations
-    PROJ_SIZES=$SIZES/$project
-    PROJ_TIMES=$TIMES/$project
+    PROJ_SIZES=$RESULTS/sizes/$project
+    PROJ_TIMES=$RESULTS/times/$project
     mkdir -p $PROJ_TIMES $PROJ_SIZES
     # misc. per-project variables
     DEFAULT_BRANCH=$(basename $(git symbolic-ref --short refs/remotes/origin/HEAD))  # master, main, ... whatever
@@ -107,24 +105,36 @@ collect-nocheckout-data() {
     wait
 }
 ## combine all csv files into a single, summary csv
-summarize() {
-    local results=$1
-    (
-        cd $results        # do this in a subshell, so you don't have to track the cds
-        cat nweeks.csv |
-            join -t, - ncommits.csv |
-            join -t, - ncommitters.csv |
-            join -t, - nauthors.csv |
-            join -t, - nfiles.csv |
-            sed 's/ //g' > all.csv
-    ) 
-}
-## summarize all repos
-summarize-all() {
-    local sizes
-    for sizes in $SIZES/*; do
-        summarize $sizes
+add-suffix() {
+    suffix=$1; shift
+    for name in $*; do
+        echo $name.$suffix
     done
+}
+
+# join a list of files
+multi-join() {
+    local first="yes"
+    for file in $*
+    do
+        if [ $first = "yes" ]; then
+            command="cat $file"
+            first="no"
+        else
+            command+=" | join -t, - $file"
+        fi
+    done
+    eval "$command"
+}
+
+summarize() {
+    local dir=$1
+    (
+        cd $dir        # do this in a subshell, so you don't have to track the cds
+        local files=$(add-suffix csv $FUNCS)
+        multi-join $files |
+            sed 's/ //g'
+    ) 
 }
 
 
@@ -145,7 +155,7 @@ report-elapsed-time() {
     (( elapsed_seconds = SECONDS - begin_script ))
     (( minutes = elapsed_seconds / 60 ))
     seconds=$((elapsed_seconds - minutes*60))
-    printf "Total elapsed time %02d:%02d\n" $minutes $seconds | tee $TIMES/total.times
+    printf "Total elapsed time %02d:%02d\n" $minutes $seconds
 }
 
 # Timing commits
@@ -198,10 +208,10 @@ main() {
             echo == calculating sizes of project $project in $PWD ==
             set-locals $project
             collect-nocheckout-data
+            summarize $PROJ_SIZES > $RESULTS/$project.csv
         ) &
     done
     wait
-    summarize-all
 }
 
 # Run as a script if the file is invoked, not sourced.
@@ -211,5 +221,5 @@ if [ "$BASH_SOURCE" == "$0" ]; then
     # trap get-default-branch EXIT
     # main "$@"
     main
-    report-elapsed-time | tee $TIMES/total.times
+    report-elapsed-time | tee $RESULTS/total.times
 fi
