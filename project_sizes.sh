@@ -233,5 +233,5 @@ if [ "$BASH_SOURCE" == "$0" ]; then
     # trap get-default-branch EXIT
     # main "$@"
     main
-    report-elapsed-time | tee $SUMMARY/$(basename $0).times
+    report-elapsed-time | tee $SUMMARY/$(basename $0 .sh).times
 fi
