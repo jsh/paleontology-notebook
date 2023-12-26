@@ -174,8 +174,8 @@ timestamp() {
 }
 ## seconds-per-week
 spw() {
-    : ${SPW=$(( 60*60*24*7 ))}     # calculate and save seconds-per-week once
-    echo "scale=2; $1/$SPW" | bc
+    : ${spw:=$(( 60*60*24*7 ))}     # calculate seconds-per-week once
+    echo "scale=2; $1/$spw" | bc
 }
 timestamp-in-weeks() {
     spw $(timestamp $1)
