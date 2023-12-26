@@ -15,23 +15,28 @@ get-default-branch() {
 
 
 # Setup variables
+## global defaults
+set-defaults() {
+    : ${REVS:=""}
+    : ${NPOINTS:=1000}
+    : ${RESULTS:=/tmp}
+    : ${FUNCS:="ncommits nweeks nauthors ncommitters nfiles"}
+}
 ## script variables set once, used in several places
 set-globals() {
-    SPW=$(( 60*60*24*7 ))  # calculate and save seconds-per-week as a shell constant
-    # plus some defaults
-    REVS=""
-    NPOINTS=1000
-    RESULTS=/tmp
-    FUNCS="ncommits nweeks nauthors ncommitters nfiles"
+    set-defaults
+    read-config   # defaults can be overwritten by settings in .config
+    SUMMARY=$RESULTS/summary    # after RESULTS is set
 }
 
 ## per-project variables
 set-locals() {
     project=$1
-    # output locations
+    # setup for project output
     PROJ_SIZES=$RESULTS/sizes/$project
     PROJ_TIMES=$RESULTS/times/$project
-    mkdir -p $PROJ_TIMES $PROJ_SIZES
+    rm -rf $RESULTS  # cleanliness is next to godliness
+    mkdir -p $SUMMARY $PROJ_TIMES $PROJ_SIZES
     # misc. per-project variables
     DEFAULT_BRANCH=$(basename $(git symbolic-ref --short refs/remotes/origin/HEAD))  # master, main, ... whatever
     SKIP=$(skip-size-for $NPOINTS)
@@ -168,7 +173,10 @@ timestamp() {
     seconds-between $FIRST_COMMIT $1
 }
 ## seconds-per-week
-spw() { echo "scale=2; $1/$SPW" | bc; }
+spw() {
+    : ${SPW=$(( 60*60*24*7 ))}     # calculate and save seconds-per-week once
+    echo "scale=2; $1/$SPW" | bc
+}
 timestamp-in-weeks() {
     spw $(timestamp $1)
 }
@@ -195,21 +203,25 @@ read-config() {
     [ -f .config ] && source .config
 }
 
+## get sizes for repo
+sizes() (   # in a subshell
+            local repo=$1
+            local project=$(project-name $repo)
+            [ -d $project ] || git clone -q $repo  # if it's not already local, clone from URL
+            cd $project > /dev/null
+            echo == calculating sizes of project $project in $PWD ==
+            set-locals $project
+            { time collect-nocheckout-data; } &> $SUMMARY/$project.times
+            summarize $PROJ_SIZES > $SUMMARY/$project.csv
+)
+
+
 # Put them all together, they spell "MOTHER."
 main() {
     local cmdline_args="$@"
     set-globals
-    read-config
     for repo in $(repo-list $cmdline_args); do
-        local project=$(project-name $repo)
-        [ -d $project ] || git clone -q $repo  # if it's not already local, clone from URL
-        (   # in a subshell
-            cd $project > /dev/null
-            echo == calculating sizes of project $project in $PWD ==
-            set-locals $project
-            collect-nocheckout-data
-            summarize $PROJ_SIZES > $RESULTS/$project.csv
-        ) &
+        sizes $repo &
     done
     wait
 }
@@ -221,5 +233,5 @@ if [ "$BASH_SOURCE" == "$0" ]; then
     # trap get-default-branch EXIT
     # main "$@"
     main
-    report-elapsed-time | tee $RESULTS/total.times
+    report-elapsed-time | tee $SUMMARY/$(basename $0).times
 fi
