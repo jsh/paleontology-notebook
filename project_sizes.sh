@@ -20,7 +20,7 @@ set-defaults() {
     : ${REVS:=""}
     : ${NPOINTS:=1000}
     : ${RESULTS:=/tmp}
-    : ${FUNCS:="ncommits nweeks nauthors ncommitters nfiles"}
+    : ${FUNCS:="ncommits nweeks nauthors ncommitters nfiles nbytes-and-lines nzbytes"}
 }
 ## script variables set once, used in several places
 set-globals() {
@@ -100,6 +100,31 @@ files() { git ls-tree -r --full-tree --name-only ${1:-HEAD}; }
 nfiles() {
     for rev in $*; do
         echo $rev,$(files $rev | wc -l)
+    done
+}
+## size of revision in bytes and lines
+bytes-and-lines() {
+        local rev=$1
+        git archive --format=tar $rev |
+            wc -c -l |
+            perl -pe 's/^,// if s/ +/,/g'
+}
+## bytes and lines in each revision
+nbytes-and-lines() {
+    for rev in $*; do
+        echo $rev,$(bytes-and-lines $rev)
+    done
+}
+## size of revision in lines
+nlines() {
+    for rev in $*; do
+        echo $rev,$(git archive --format=tar $rev | wc -l)
+    done
+}
+## size of compressed tree in bytes
+nzbytes() {
+    for rev in $*; do
+        echo $rev,$(git archive --format=zip $rev | wc -c)
     done
 }
 ## complete data for current repo
