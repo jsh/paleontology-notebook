@@ -17,7 +17,7 @@ get-default-branch() {
 # Setup variables
 ## global defaults
 set-defaults() {
-    : ${REVS:=""}
+    : ${SELECT_REVS:=""}  # all revisions
     : ${NPOINTS:=1000}
     : ${RESULTS:=/tmp}
     : ${FUNCS:="ncommits nweeks nauthors ncommitters nfiles nbytes-and-lines nzbytes"}
@@ -28,7 +28,6 @@ set-globals() {
     read-config   # defaults can be overwritten by settings in .config
     SUMMARY=$RESULTS/summary    # after RESULTS is set
 }
-
 ## per-project variables
 set-locals() {
     project=$1
@@ -47,7 +46,7 @@ set-locals() {
 # Revisions to work on.
 ## all revisions
 revs() {
-    git rev-list $REVS --abbrev-commit --reverse $DEFAULT_BRANCH
+    git rev-list $SELECT_REVS --abbrev-commit --reverse $DEFAULT_BRANCH
 }
 ## total revisions
 nrevs() {
@@ -64,67 +63,97 @@ sample-revs(){
 }
 ## cache the list in REV_LIST
 set-rev-list() {
-    : ${REV_LIST:="$(sample-revs)"}     # calculate once per project
+    : ${REV_LIST:="$(sample-revs)"}     # only calculate once per project
 }
 
 # Data-collection
 ## commits per revision
 ncommits() {
-    local sample=1;
+    commits=1
     for rev in $*; do
-        echo $rev,$sample
-        ((sample += $SKIP))
+        echo $rev,$commits
+        (( commits += SKIP ))
     done
 }
 ## weeks after initial commit, each revision
+timestamp-in-weeks() {
+    spw $(timestamp ${1:-HEAD})
+}
 nweeks() {
     for rev in $*; do
         echo $rev,$(timestamp-in-weeks $rev)
     done
 }
 ## number of authors at each revision
+authors() {
+    git shortlog $SELECT_REVS -sa ${1:-HEAD} | wc -l
+}
 nauthors() {
     for rev in $*; do
-        echo $rev,$(git shortlog $REVS -sa $rev | wc -l)
+        echo $rev,$(authors $rev)
     done
 }
 ## number of committers at each revision
+committers() {
+    git shortlog $SELECT_REVS -sc ${1:-HEAD} | wc -l
+}
 ncommitters() {
     for rev in $*; do
-        echo $rev,$(git shortlog $REVS -sc $rev | wc -l)
+        echo $rev,$(committers $rev)
     done
 }
 ## all files in a revision
-files() { git ls-tree -r --full-tree --name-only ${1:-HEAD}; }
+files() {
+    git ls-tree -r --full-tree --name-only ${1:-HEAD} | wc -l
+}
 ## number of files at each revision
 nfiles() {
     for rev in $*; do
-        echo $rev,$(files $rev | wc -l)
+        echo $rev,$(files $rev)
     done
 }
-## size of revision in bytes and lines
-bytes-and-lines() {
-        local rev=$1
-        git archive --format=tar $rev |
-            wc -c -l |
-            perl -pe 's/^,// if s/ +/,/g'
+## size of revision
+tarball() {
+    local rev=$1
+    git archive --format=tar $rev
+}
+chars() {
+    tarball ${1:-HEAD} | wc -c
+}
+nchars() {
+    for rev in $*; do
+        echo $rev, $(chars $rev)
+    done
+}
+lines() {
+    tarball ${1:-HEAD} | wc -l
+}
+nlines() {
+    for rev in $*; do
+        echo $rev, $(lines $rev)
+    done
 }
 ## bytes and lines in each revision
+bytes-and-lines() {
+    tarball $rev | wc -c -l| perl -pe 's/^,// if s/ +/,/g'
+}
+
 nbytes-and-lines() {
     for rev in $*; do
         echo $rev,$(bytes-and-lines $rev)
     done
 }
-## size of revision in lines
-nlines() {
-    for rev in $*; do
-        echo $rev,$(git archive --format=tar $rev | wc -l)
-    done
-}
 ## size of compressed tree in bytes
+zipball() {
+    local rev=$1
+    git archive --format=zip $rev
+}
+zbytes() {
+    zipball ${1:-HEAD} | wc -c
+}
 nzbytes() {
     for rev in $*; do
-        echo $rev,$(git archive --format=zip $rev | wc -c)
+        echo $rev,$(zipball $rev)
     done
 }
 ## complete data for current repo
@@ -160,7 +189,7 @@ multi-join() {
 summarize() {
     local dir=$1
     (
-        cd $dir        # do this in a subshell, so you don't have to track the cds
+        cd $dir        # do this in a subshell, so you do not have to track the cds
         local files=$(add-suffix csv $FUNCS)
         multi-join $files |
             sed 's/ //g'
@@ -202,9 +231,6 @@ spw() {
     : ${spw:=$(( 60*60*24*7 ))}     # calculate seconds-per-week once
     echo "scale=2; $1/$spw" | bc
 }
-timestamp-in-weeks() {
-    spw $(timestamp $1)
-}
 
 # Argument parsing
 ## all repos to traverse
@@ -232,7 +258,7 @@ read-config() {
 sizes() (   # in a subshell
             local repo=$1
             local project=$(project-name $repo)
-            [ -d $project ] || git clone -q $repo  # if it's not already local, clone from URL
+            [ -d $project ] || git clone -q $repo  # if it is not already local, clone from URL
             cd $project > /dev/null
             echo == calculating sizes of project $project in $PWD ==
             set-locals $project
